@@ -759,7 +759,7 @@ for (year_val in years_to_plot) {
   
   # 4. Save the animation as a GIF (or other format)
   animate(anim_choropleth,
-          duration = 30, # Adjust duration as needed
+          duration = 40, # Adjust duration as needed
           fps = 20,      # Adjust fps as needed
           renderer = gifski_renderer("choropleth_animation.gif"))
 }
