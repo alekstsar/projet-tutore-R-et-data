@@ -763,3 +763,7 @@ for (year_val in years_to_plot) {
           fps = 20,      # Adjust fps as needed
           renderer = gifski_renderer("choropleth_animation.gif"))
 }
+
+
+# ------------------------------------------------------------
+# that's what she said
