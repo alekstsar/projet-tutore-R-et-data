@@ -1,0 +1,861 @@
+---
+title: "Hermelin_Bousquet_Tsarkova_PT"
+author: "Tsarkova Aleksandra"
+date: "`r Sys.Date()`"
+output:
+  word_document: default
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+# Tendances régionales dans l’usage des médicaments anxiolytiques en France : analyse des données 2018-2023
+
+## Bibliothèques et données
+------------------------------------------------------------
+
+
+
+L’étude est basée sur les données OpenMedic, disponibles sur le site [data.gouv.fr](https://www.data.gouv.fr/fr/datasets/open-medic-base-complete-sur-les-depenses-de-medicaments-interregimes/). Cette base de données est exhaustive, anonymisée et recense la délivrance des médicaments en pharmacie de ville – les délivrances hospitalières ne sont pas prises en compte. Contrairement à la base OpenMedic principale, qui recensait uniquement le nombre de boîtes vendues par année, nous avons utilisé les "Bases complémentaires enrichies des dénombrements de consommants", qui fournissaient des informations détaillées sur le nombre de patients ayant consommé des médicaments classés selon la classification Anatomique Thérapeutique Chimique (ATC). Ces bases incluaient également des indicateurs sur les montants et le nombre de boîtes vendues. Ainsi, l’absence de détails sur le conditionnement (nombre de comprimés, dosage, posologie) ne permet pas d’estimer la consommation en doses définies journalières (DDD) pour 1000 habitants. Par conséquent, nous avons choisi d’utiliser le nombre de boîtes délivrées par habitant comme principal indicateur de l’évolution d'usage des anxiolytiques.
+
+Dans cette étude, nous avons étudié l'usage des anxiolytiques (code ATC3 : N05B). Plus précisément, nous avons analysé la délivrance de l’ensemble des médicaments appartenant à la classe des benzodiazépines (code ATC4 : N05BA) ainsi que de trois médicaments de la classe des non-benzodiazépines : Buspirone (N05BE01), Étifoxine (N05BX03) et Hydroxyzine (N05BB01)
+
+```{r data_import, echo=TRUE, results='hide', warning=FALSE}
+library(tidyverse)
+
+
+# import and summaries data
+NB_2018_atc4_age_sexe_reg_spe <- read.csv("./data/ATC4_sexe_age/NB_2018_atc4_age_sexe_reg_spe.CSV", sep=";")
+NB_2019_atc4_age_sexe_reg_spe <- read.csv("./data/ATC4_sexe_age/NB_2019_atc4_age_sexe_reg_spe.CSV", sep=";")
+NB_2020_atc4_age_sexe_reg_spe <- read.csv("./data/ATC4_sexe_age/NB_2020_atc4_age_sexe_reg_spe.CSV", sep=";")
+NB_2021_atc4_age_sexe_reg_spe <- read.csv("./data/ATC4_sexe_age/NB_2021_atc4_age_sexe_reg_spe.CSV", sep=";")
+NB_2022_atc4_age_sexe_reg_spe <- read.csv("./data/ATC4_sexe_age/NB_2022_atc4_age_sexe_reg_spe.CSV", sep=";")
+NB_2023_atc4_age_sexe_reg_spe <- read.csv("./data/ATC4_sexe_age/NB_2023_atc4_age_sexe_reg_spe.CSV", sep=";")
+```
+
+
+
+## Gestion des données
+------------------------------------------------------------
+Renommer la variable dans la table NB_2019_atc4_age_sexe_reg_spe pour qu'elle corresponde aux autres.
+Créer de nouvelles tables contenant les données pertinentes pour le médicament N05BA
+
+
+```{r data_man}
+NB_2019_atc4_age_sexe_reg_spe<- NB_2019_atc4_age_sexe_reg_spe %>% 
+  rename(sexe = SEXE)
+```
+
+```{r filter}
+filterN05BA <- function(data) {
+  filteredData <- data %>%
+    dplyr::select(ATC4, BEN_REG, BOITES, sexe, age, nbc) %>%
+    filter(ATC4 == "N05BA")
+  return(filteredData)
+}
+
+ATC4_2018_N05BA <- filterN05BA(NB_2018_atc4_age_sexe_reg_spe)
+ATC4_2019_N05BA <- filterN05BA(NB_2019_atc4_age_sexe_reg_spe)
+ATC4_2020_N05BA <- filterN05BA(NB_2020_atc4_age_sexe_reg_spe)
+ATC4_2021_N05BA <- filterN05BA(NB_2021_atc4_age_sexe_reg_spe)
+ATC4_2022_N05BA <- filterN05BA(NB_2022_atc4_age_sexe_reg_spe)
+ATC4_2023_N05BA <- filterN05BA(NB_2023_atc4_age_sexe_reg_spe)
+```
+
+Supprimez les anciennes données du modèle afin d'économiser de l'espace
+```{r clearing, echo=TRUE}
+
+rm(list = ls(pattern = "atc4_age_sexe_reg_spe"))
+```
+
+
+Combiner en 1 tableau
+Certaines valeurs aberrantes ont été observées dans BOITES (-13). Elles ont été traitées comme des données absentes et remplacées par NA
+```{r comb, include=FALSE}
+N05BA_2018_2023 <- bind_rows(
+    "2018" = ATC4_2018_N05BA,
+    "2019" = ATC4_2019_N05BA,
+    "2020" = ATC4_2020_N05BA,
+    "2021" = ATC4_2021_N05BA,
+    "2022" = ATC4_2022_N05BA,
+    "2023" = ATC4_2023_N05BA,
+    .id = "Year"
+  )
+
+summary(N05BA_2018_2023) 
+
+N05BA_2018_2023 <- N05BA_2018_2023 %>%
+  mutate(BOITES2 = if_else(BOITES < 0, NA_real_, BOITES))
+view(N05BA_2018_2023)
+```
+
+```{r data_cleanup, echo=FALSE}
+summary(N05BA_2018_2023)
+```
+
+```{r clearing2, include=FALSE}
+rm(list = ls(pattern = "ATC4_20"))
+```
+Les mêmes manipulations ont été réalisées avec les jeux de données OpenMedic NB_20XX_atc5_age_sexe_reg_spe.CSV (2018-2023) pour obtenir l'ensemble de données combiné pour les médicaments suivants : Buspirone (N05BE01), Etifoxine (N05BX03) et Hydroxyzine (N05BB01).
+
+Dans l'ensemble de données obtenu N05B_2018_2023, certaines valeurs aberrantes ont également été observées dans BOITES (-17). Elles ont été traitées comme des données absentes et remplacées par NA.
+
+```{r data_import2}
+N05B_2018_2023 <- read.csv("./sorted data/N05B_2018_2023.csv")
+summary(N05B_2018_2023)
+```
+
+
+Les deux tables N05BA_2018_2023 et N05B_2018_2023 ont été combinés pour créer un jeu de données unique contenant le nombre total de boites vendue pour tous les types de médicaments étudiés et leur délivrance par région, sexe, groupe d'âge et nombre de consommateurs.
+
+
+```{r summation}
+N05BA_2018_2023 <- N05BA_2018_2023 %>% 
+  mutate(Year = as.numeric(Year)) %>% 
+  rename(ATC_code = ATC4)
+
+
+N05B_2018_2023 <- N05B_2018_2023 %>% 
+  rename(ATC_code = ATC5)
+
+#Combine into 1 table
+Tot_2018_2023 <- bind_rows(N05B_2018_2023, N05BA_2018_2023, .id = NULL)
+
+summary(Tot_2018_2023)
+
+Tot_2018_2023 <- Tot_2018_2023 %>% 
+  transform(Year = as.factor(Year),
+            BEN_REG = as.factor(BEN_REG)) %>% 
+  mutate(REG_NOM = (case_when(BEN_REG == 0 ~ "Inconnu",
+                              BEN_REG == 99 ~ "Inconnu",
+                              BEN_REG == 5 ~ "Régions et Départements d'outre-mer",
+                              BEN_REG == 11 ~ "Ile-de-France",
+                              BEN_REG == 24 ~ "Centre-Val de Loire",
+                              BEN_REG == 27 ~ "Bourgogne-Franche-Comté",
+                              BEN_REG == 28 ~ "Normandie",
+                              BEN_REG == 32 ~ "Nord-Pas-de-Calais-Picardie",
+                              BEN_REG == 44 ~ "Alsace-Champagne-Ardenne-Lorraine",
+                              BEN_REG == 52 ~ "Pays de la Loire",
+                              BEN_REG == 53 ~ "Bretagne",
+                              BEN_REG == 75 ~ "Aquitaine-Limousin-Poitou-Charentes",
+                              BEN_REG == 76 ~ "Languedoc-Roussillon-Midi-Pyrénées",
+                              BEN_REG == 84 ~ "Auvergne-Rhône-Alpes",
+                              BEN_REG == 93 ~ "Provence-Alpes-Côte d'Azur et Corse")
+  ))
+
+
+Tot_2018_2023 <- Tot_2018_2023 %>%
+  mutate(PERIODE = case_when( Year == 2018 | Year == 2019 ~ "Pré-COVID",
+                              Year == 2020 | Year == 2021 ~ "COVID", 
+                              Year == 2022 | Year == 2023 ~ "Post-COVID")
+  )
+
+
+```
+
+
+## Calcul des indicateurs
+------------------------------------------------------------
+## Gestion des données de l'INSEE
+------------------------------------------------------------
+
+Les nombres bruts de boites de médicaments consommées avaient été ajustés en fonction l’Estimation de la population au 1ᵉʳ janvier 2025  de [l’INSEE](https://www.insee.fr/fr/statistiques/8331297), afin d’exprimer les résultats en Taux de délivrance standardisé pour 1000 habitants.
+Les estimations de population de l’INSEE sont calculées chaque année et fournies par sexe et tranche d’âge. Elles sont utilisées pour le calcul de divers indicateurs démographiques tels que les taux de natalité, de mortalité et l’espérance de vie. Ces estimations sont dérivées des recensements de population, complétées par des ajustements provisoires entre deux recensements successifs.
+Chaque année, l’INSEE publies des estimations révisées des années précédentes pour aligner les données sur les derniers résultats du recensement. Ce processus assure une mise à jour progressive et cohérente des données démographiques utilisées dans cette étude.
+
+```{r inseeimp, include=FALSE}
+library(readxl)
+estim_pop_nreg_sexe_gca_2019 <- read_excel("data/estim-pop-nreg-sexe-gca-1975-2025.xlsx", sheet = "2019")
+estim_pop_nreg_sexe_gca_2018 <- read_excel("data/estim-pop-nreg-sexe-gca-1975-2025.xlsx", sheet = "2018")
+estim_pop_nreg_sexe_gca_2020 <- read_excel("data/estim-pop-nreg-sexe-gca-1975-2025.xlsx", sheet = "2020")
+estim_pop_nreg_sexe_gca_2021 <- read_excel("data/estim-pop-nreg-sexe-gca-1975-2025.xlsx", sheet = "2021")
+estim_pop_nreg_sexe_gca_2022 <- read_excel("data/estim-pop-nreg-sexe-gca-1975-2025.xlsx", sheet = "2022")
+estim_pop_nreg_sexe_gca_2023 <- read_excel("data/estim-pop-nreg-sexe-gca-1975-2025.xlsx", sheet = "2023")
+```
+
+
+
+
+```{r stand}
+
+# 2019
+
+#Création d'une data frame qui garde uniquement les colonnes indiquées dans le vecteur.
+Data_2019_filtrage <- estim_pop_nreg_sexe_gca_2019[, c("Estimation de population au 1er janvier, par région, sexe et grande classe d'âge", "...7")]
+#Supprime les lignes du vecteur, afin de garder seulement celles qui sont utiles et qui nous intéressent dans notre analyse.
+Data_2019_filtrage <- Data_2019_filtrage[-c(1,2,3,4,18,19,20,21,22,23,24,25,26,27), ]
+#On rename les noms de colonne pour que ce soit plus facile à utiliser
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  rename(REG_NOM = `Estimation de population au 1er janvier, par région, sexe et grande classe d'âge`)
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  rename(POP_REG = `...7`)
+
+#Met la variable POP_REG en numérique
+Data_2019_filtrage <- Data_2019_filtrage %>% 
+  mutate(POP_REG = as.numeric(POP_REG))
+#Changement des noms de variables pour qu'ils correspondent à la version OpenMedic
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Île-de-France", "Ile-de-France", `REG_NOM`))
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Centre-Val-de-Loire", "Centre-Val de Loire", `REG_NOM`))
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Hauts-de-France", "Nord-Pas-de-Calais-Picardie", `REG_NOM`))
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Grand Est", "Alsace-Champagne-Ardenne-Lorraine", `REG_NOM`))
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Nouvelle-Aquitaine", "Aquitaine-Limousin-Poitou-Charentes", `REG_NOM`))
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Occitanie", "Languedoc-Roussillon-Midi-Pyrénées", `REG_NOM`))
+#Fusion des lignes Corse et Provence-Alpes-Côte d'Azur afin que ça corresponde aux régions renseignées sur OPEN MEDIC
+Data_2019_filtrage <- Data_2019_filtrage %>%
+  mutate(REG_NOM = ifelse(REG_NOM %in% c("Corse", "Provence-Alpes-Côte d'Azur"), "Provence-Alpes-Côte d'Azur et Corse", REG_NOM)) %>%
+  group_by(REG_NOM) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE))
+  
+#On rajoute une variable intitulée "Year" qui rajoute à chaque ligne l'année correspondante à la table afin de préparer la fusion avec la table Tot_2018_2023_filtrage
+Data_2019_filtrage <- Data_2019_filtrage %>%
+                      mutate(Year = "2019")  
+
+
+head(Data_2019_filtrage)
+```
+
+
+
+Pour les années 2018, 2020-2023 même principe que pour 2019
+
+```{r stand2, include=FALSE}
+
+Data_2018_filtrage <- estim_pop_nreg_sexe_gca_2018[, c("Estimation de population au 1er janvier, par région, sexe et grande classe d'âge", "...7")]
+Data_2018_filtrage <- Data_2018_filtrage[-c(1,2,3,4,18,19,20,21,22,23,24,25,26,27), ]
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  rename(REG_NOM = `Estimation de population au 1er janvier, par région, sexe et grande classe d'âge`)
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  rename(POP_REG = `...7`)
+Data_2018_filtrage <- Data_2018_filtrage %>% 
+  mutate(POP_REG = as.numeric(POP_REG))
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Île-de-France", "Ile-de-France", `REG_NOM`))
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Centre-Val-de-Loire", "Centre-Val de Loire", `REG_NOM`))
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Hauts-de-France", "Nord-Pas-de-Calais-Picardie", `REG_NOM`))
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Grand Est", "Alsace-Champagne-Ardenne-Lorraine", `REG_NOM`))
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Nouvelle-Aquitaine", "Aquitaine-Limousin-Poitou-Charentes", `REG_NOM`))
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Occitanie", "Languedoc-Roussillon-Midi-Pyrénées", `REG_NOM`))
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(REG_NOM = ifelse(REG_NOM %in% c("Corse", "Provence-Alpes-Côte d'Azur"), "Provence-Alpes-Côte d'Azur et Corse", REG_NOM)) %>%
+  group_by(REG_NOM) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE))
+
+Data_2018_filtrage <- Data_2018_filtrage %>%
+  mutate(Year = "2018")
+
+head(Data_2018_filtrage)
+```
+
+
+```{r stand3, include=FALSE}
+
+
+Data_2020_filtrage <- estim_pop_nreg_sexe_gca_2020[, c("Estimation de population au 1er janvier, par région, sexe et grande classe d'âge", "...7")]
+Data_2020_filtrage <- Data_2020_filtrage[-c(1,2,3,4,18,19,20,21,22,23,24,25,26,27), ]
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  rename(REG_NOM = `Estimation de population au 1er janvier, par région, sexe et grande classe d'âge`)
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  rename(POP_REG = `...7`)
+Data_2020_filtrage <- Data_2020_filtrage %>% 
+  mutate(POP_REG = as.numeric(POP_REG))
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Île-de-France", "Ile-de-France", `REG_NOM`))
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Centre-Val-de-Loire", "Centre-Val de Loire", `REG_NOM`))
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Hauts-de-France", "Nord-Pas-de-Calais-Picardie", `REG_NOM`))
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Grand Est", "Alsace-Champagne-Ardenne-Lorraine", `REG_NOM`))
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Nouvelle-Aquitaine", "Aquitaine-Limousin-Poitou-Charentes", `REG_NOM`))
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Occitanie", "Languedoc-Roussillon-Midi-Pyrénées", `REG_NOM`))
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(REG_NOM = ifelse(REG_NOM %in% c("Corse", "Provence-Alpes-Côte d'Azur"), "Provence-Alpes-Côte d'Azur et Corse", REG_NOM)) %>%
+  group_by(REG_NOM) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE))
+
+Data_2020_filtrage <- Data_2020_filtrage %>%
+  mutate(Year = "2020")
+
+head(Data_2020_filtrage)
+```
+
+
+```{r stand4, include=FALSE}
+
+
+Data_2021_filtrage <- estim_pop_nreg_sexe_gca_2021[, c("Estimation de population au 1er janvier, par région, sexe et grande classe d'âge", "...7")]
+Data_2021_filtrage <- Data_2021_filtrage[-c(1,2,3,4,18,19,20,21,22,23,24,25,26,27), ]
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  rename(REG_NOM = `Estimation de population au 1er janvier, par région, sexe et grande classe d'âge`)
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  rename(POP_REG = `...7`)
+Data_2021_filtrage <- Data_2021_filtrage %>% 
+  mutate(POP_REG = as.numeric(POP_REG))
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Île-de-France", "Ile-de-France", `REG_NOM`))
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Centre-Val-de-Loire", "Centre-Val de Loire", `REG_NOM`))
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Hauts-de-France", "Nord-Pas-de-Calais-Picardie", `REG_NOM`))
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Grand Est", "Alsace-Champagne-Ardenne-Lorraine", `REG_NOM`))
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Nouvelle-Aquitaine", "Aquitaine-Limousin-Poitou-Charentes", `REG_NOM`))
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Occitanie", "Languedoc-Roussillon-Midi-Pyrénées", `REG_NOM`))
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(REG_NOM = ifelse(REG_NOM %in% c("Corse", "Provence-Alpes-Côte d'Azur"), "Provence-Alpes-Côte d'Azur et Corse", REG_NOM)) %>%
+  group_by(REG_NOM) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE))
+
+Data_2021_filtrage <- Data_2021_filtrage %>%
+  mutate(Year = "2021")
+
+head(Data_2021_filtrage)
+```
+
+
+```{r stand5, include=FALSE}
+
+
+Data_2022_filtrage <- estim_pop_nreg_sexe_gca_2022[, c("Estimation de population au 1er janvier, par région, sexe et grande classe d'âge", "...7")]
+Data_2022_filtrage <- Data_2022_filtrage[-c(1,2,3,4,18,19,20,21,22,23,24,25,26,27), ]
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  rename(REG_NOM = `Estimation de population au 1er janvier, par région, sexe et grande classe d'âge`)
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  rename(POP_REG = `...7`)
+Data_2022_filtrage <- Data_2022_filtrage %>% 
+  mutate(POP_REG = as.numeric(POP_REG))
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Île-de-France", "Ile-de-France", `REG_NOM`))
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Centre-Val-de-Loire", "Centre-Val de Loire", `REG_NOM`))
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Hauts-de-France", "Nord-Pas-de-Calais-Picardie", `REG_NOM`))
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Grand Est", "Alsace-Champagne-Ardenne-Lorraine", `REG_NOM`))
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Nouvelle-Aquitaine", "Aquitaine-Limousin-Poitou-Charentes", `REG_NOM`))
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Occitanie", "Languedoc-Roussillon-Midi-Pyrénées", `REG_NOM`))
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(REG_NOM = ifelse(REG_NOM %in% c("Corse", "Provence-Alpes-Côte d'Azur"), "Provence-Alpes-Côte d'Azur et Corse", REG_NOM)) %>%
+  group_by(REG_NOM) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE))
+
+Data_2022_filtrage <- Data_2022_filtrage %>%
+  mutate(Year = "2022")
+
+head(Data_2022_filtrage)
+
+```
+
+
+```{r stand6, include=FALSE}
+
+
+Data_2023_filtrage <- estim_pop_nreg_sexe_gca_2023[, c("Estimation de population au 1er janvier, par région, sexe et grande classe d'âge", "...7")]
+Data_2023_filtrage <- Data_2023_filtrage[-c(1,2,3,4,18,19,20,21,22,23,24,25,26,27), ]
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  rename(REG_NOM = `Estimation de population au 1er janvier, par région, sexe et grande classe d'âge`)
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  rename(POP_REG = `...7`)
+Data_2023_filtrage <- Data_2023_filtrage %>% 
+  mutate(POP_REG = as.numeric(POP_REG))
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Île-de-France", "Ile-de-France", `REG_NOM`))
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Centre-Val-de-Loire", "Centre-Val de Loire", `REG_NOM`))
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Hauts-de-France", "Nord-Pas-de-Calais-Picardie", `REG_NOM`))
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Grand Est", "Alsace-Champagne-Ardenne-Lorraine", `REG_NOM`))
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Nouvelle-Aquitaine", "Aquitaine-Limousin-Poitou-Charentes", `REG_NOM`))
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(`REG_NOM` = ifelse(`REG_NOM` == "Occitanie", "Languedoc-Roussillon-Midi-Pyrénées", `REG_NOM`))
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(REG_NOM = ifelse(REG_NOM %in% c("Corse", "Provence-Alpes-Côte d'Azur"), "Provence-Alpes-Côte d'Azur et Corse", REG_NOM)) %>%
+  group_by(REG_NOM) %>%
+  summarise(across(where(is.numeric), sum, na.rm = TRUE))
+
+Data_2023_filtrage <- Data_2023_filtrage %>%
+  mutate(Year = "2023")
+
+head(Data_2023_filtrage)
+
+```
+
+
+Ensuite, on fait :
+
+- Création d'une data frame nommée "Data_filtrage" répertoriant les données des 6 années ;
+- Création de l'indicateur intitulé "Taux de délivrance standardisé" (TDS) ;
+- Création du nombre total de ventes pour une région, divisé par le nombre d'habitants de la région.
+
+```{r datfil, echo=TRUE, results='hide'}
+
+
+Data_filtrage <- bind_rows(Data_2018_filtrage, 
+                           Data_2019_filtrage, 
+                           Data_2020_filtrage, 
+                           Data_2021_filtrage, 
+                           Data_2022_filtrage, 
+                           Data_2023_filtrage,
+                             .id = NULL)
+
+#Jointure entre les deux tables Tot_2018_2023_filtrage et Data_filtrage
+Tot_2018_2023_filtrageHelp <- Tot_2018_2023 %>% 
+  select(Year, BEN_REG, REG_NOM, BOITES2) %>% 
+  filter(REG_NOM != "Inconnu" & REG_NOM != "Régions et Départements d'outre-mer") %>% 
+  group_by(Year, BEN_REG, REG_NOM) %>% 
+  summarise(Sold = sum(BOITES2)) %>% 
+  ungroup() %>% 
+  print(n=nrow(.))
+
+Tot_2018_2023_filtrage <- full_join(Tot_2018_2023_filtrageHelp, Data_filtrage, by = c("Year", "REG_NOM"))
+```
+
+
+```{r tcs, echo=TRUE}
+
+Tot_2018_2023_filtrage <- Tot_2018_2023_filtrage %>% 
+  mutate(TCS = (Sold/POP_REG)*1000)
+```
+
+```{r clearing3, include=FALSE}
+rm(list = ls(pattern = "estim_pop_nreg_sexe"))
+rm(list = ls(pattern = "Data_20"))
+```
+
+
+
+## Visualisation
+------------------------------------------------------------
+## Spaghetti graphs
+------------------------------------------------------------
+
+Visualisation de tous les anxiolytiques sur un seul graphique linéaire
+Préparation du schéma de couleurs
+
+```{r color}
+
+library(RColorBrewer)
+
+custom_colors <- (values = c("#641220","#A11D33","#ca0101","#e35053","#f1a7a9","#f9dcde","#bbdefb","#64b5f6","#2196f3","#2a6f97","#014f86","#051923"))
+
+custom_color_3 <- (values = c("#A11D33","#ca0101","#e35053","#f1a7a9","#eed800","#fff23e","#ffe130","#ffb700","#64b5f6","#2196f3","#014f86","#051923"))
+                  
+```
+
+Graphique spaghetti de la délivrance absolue des anxiolytiques étudiés par région et par année
+
+```{r spaghetti1, echo=TRUE}
+library(paletteer)
+library(patchwork)
+
+boites_spg <- Tot_2018_2023_filtrage %>%
+  select(Year, REG_NOM, Sold) %>% 
+  group_by(Year, REG_NOM) %>% 
+  ggplot(aes(
+    x = Year, y = Sold, 
+    group = REG_NOM, color = REG_NOM
+  )) +
+  geom_line() +
+  geom_point() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Année") + ylab("Mesure de la délivrance (boites)") + 
+  labs(color = "Régione", tag = "A", 
+       title = "Usage d'anxiolytiques \nen France métropolitaine \nentre 2018 et 2023") +
+  scale_color_manual(values = c("#A11D33","#ca0101","#e35053","#f1a7a9","#eed800","#fff23e","#ffe130","#ffb700","#64b5f6","#2196f3","#014f86","#051923"),
+                     breaks = c("Nord-Pas-de-Calais-Picardie","Bretagne","Normandie","Aquitaine-Limousin-Poitou-Charentes","Provence-Alpes-Côte d'Azur et Corse","Bourgogne-Franche-Comté","Languedoc-Roussillon-Midi-Pyrénées","Alsace-Champagne-Ardenne-Lorraine", "Centre-Val de Loire","Auvergne-Rhône-Alpes","Pays de la Loire","Ile-de-France"),
+                     drop=FALSE) +
+  theme_minimal()
+ 
+
+
+
+```
+
+Graphique spaghetti de la délivrance standardisée des anxiolytiques étudiés par région et par année
+```{r spaghetti2, echo=TRUE, fig.height=5, fig.width=7.5}
+
+
+TCS_spg <- Tot_2018_2023_filtrage %>%
+  select(Year, REG_NOM, TCS) %>% 
+  group_by(Year, REG_NOM) %>% 
+  ungroup() %>%
+  arrange(TCS) %>% 
+  ggplot(aes(
+    x = Year, y = TCS, 
+    group = REG_NOM, color = REG_NOM
+  )) +
+  geom_line() +
+  geom_point() +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Année") + ylab("Mesure de la délivrance (TDS)") + 
+  labs(color = "Régione", tag = "B", 
+       title = "Usage d'anxiolytiques pour \n1000 habitants en France métropolitaine \nentre 2018 et 2023") +
+  scale_color_manual(values = c("#A11D33","#ca0101","#e35053","#f1a7a9","#eed800","#fff23e","#ffe130","#ffb700","#64b5f6","#2196f3","#014f86","#051923"),
+                     breaks = c("Nord-Pas-de-Calais-Picardie","Bretagne","Normandie","Aquitaine-Limousin-Poitou-Charentes","Provence-Alpes-Côte d'Azur et Corse","Bourgogne-Franche-Comté","Languedoc-Roussillon-Midi-Pyrénées","Alsace-Champagne-Ardenne-Lorraine", "Centre-Val de Loire","Auvergne-Rhône-Alpes","Pays de la Loire","Ile-de-France"),
+                     drop=FALSE) +
+  theme_minimal()
+
+
+(boites_spg + TCS_spg) +
+  plot_layout(guides = "collect") & theme(legend.position = 'right')
+```
+
+
+
+## Cartes
+# ------------------------------------------------------------
+
+Régions de France sf objet [fichier geojson](https://github.com/gregoiredavid/france-geojson/blob/master/regions.geojson)
+
+```{r mapsprep}
+
+library(rmapshaper)
+library(sf)
+library(paletteer)
+library(RColorBrewer)
+
+
+FranceMet <- read_sf(file.path(getwd(), "/regions.geojson"))
+
+# Agreger les regions 93 et 94
+
+print(unique(FranceMet$code))  # Ajustez le nom de la colonne si nécessaire
+print(unique(FranceMet$nom))
+
+
+# Modifier les noms des régions : Attribuer le même nom aux deux régions que nous souhaitons fusionner
+FranceMet$code[FranceMet$code %in% c("93", "94")] <- "93"
+FranceMet$nom[FranceMet$nom %in% c("Provence-Alpes-Côte d'Azur", "Corse")] <- "Provence-Alpes-Côte d'Azur et Corse"
+
+# Dissoudre la frontière en fonction des noms de régions
+FranceMet12 <- ms_dissolve(FranceMet, field = "code")
+
+print(unique(FranceMet12$code))
+
+# Préparation avant de fusionner l'ensemble de données avec l'objet SF
+Tot_2018_2023_filtrage <- Tot_2018_2023_filtrage %>% 
+  mutate(BEN_REG = as.factor(BEN_REG))
+
+summary(Tot_2018_2023_filtrage)
+
+# Faire la fusion
+FranceBoites <- FranceMet12 %>%
+  left_join(Tot_2018_2023_filtrage, by = c("code" = "BEN_REG"))
+
+quantile(FranceBoites$TCS)
+breaks = unique(quantile(FranceBoites$TCS, prob = seq(0, 1, length = 5)))
+FranceBoites$deciles = cut(FranceBoites$TCS,breaks=breaks,include.lowest=TRUE)
+
+# Calculer les valeurs minimales et maximales globales de l'ensemble de données pour ancrer le gradient de couleurs
+
+global_min <- min(FranceBoites$TCS, na.rm = TRUE) # na.rm = TRUE handles potential NA values
+global_max <- max(FranceBoites$TCS, na.rm = TRUE)
+median_tcs <- median(FranceBoites$TCS, na.rm = TRUE)
+
+# Imprimez-les pour vérifier
+print(paste("Global Min:", global_min))
+print(paste("Global Max:", global_max))
+print(paste("Median:", median_tcs))
+
+```
+
+Création de cartes choroplèthes distinctes pour chaque année 2018-2023
+Création de boucle pour réaliser plusieurs cartes. 
+
+```{r maploop, echo=TRUE}
+
+years_to_plot <- unique(FranceBoites$Year) # Obtenez des années uniques dans les données
+
+for (year_val in years_to_plot) {
+  plot_title <- paste("Usage de médicaments anxiolytiques en France Métropolitaine en", year_val)
+  
+  p <- FranceBoites %>%
+    filter(Year == year_val) %>%
+    ggplot(aes(fill = TCS)) +
+    geom_sf() +
+    theme_void() +
+    theme(legend.position = "bottom", plot.title = element_text(hjust = 0.5)) + # Center title
+    scale_fill_distiller(
+      palette = "RdBu",
+      breaks = c(global_min, global_max),
+      labels = c(paste0(round(global_min, digits = 0)), paste0(round(global_max, digits = 0))),
+      name = paste("Taux de délivrance standardisé"),
+      limits = c(global_min, global_max)
+    ) +
+    ggtitle(plot_title) # Add title to the plot
+  
+  print(p) # Print the plot for each year
+}
+```
+
+
+Nous avons créé une image unique regroupant six cartes choroplèthes, chacune représentant la délivrance standardisée d’anxiolytiques pour 1 000 habitants en France métropolitaine sur une année spécifique entre 2018 et 2023. Cette visualisation permet une comparaison simultanée des tendances de usage à la fois dans le temps et entre les régions. L’objectif est d’illustrer l’évolution géographique de l’usage des anxiolytiques avant, pendant et après la pandémie de COVID-19, tout en mettant en évidence les disparités régionales persistantes.
+
+```{r grad}
+# choropleth 2018 
+FrTC2018 <- FranceBoites %>%
+  select(Year, REG_NOM, TCS) %>% 
+  filter(Year == "2018") %>% 
+  ggplot(aes(fill = TCS)) +
+  ggtitle("Année: 2018") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_sf() +
+  theme_void() +
+  scale_fill_distiller(palette = "RdBu", 
+                       #breaks = c(global_min, median_tcs, global_max),
+                       #labels = c(paste0(round(global_min, digits = 0)), paste0(round(median_tcs, digits = 0)), paste0(round(global_max, digits = 0))),
+                       name = paste("Taux de délivrance \nstandardisé"),
+                       limits = c(global_min, global_max) # Set the fixed limits here
+  )
+
+
+# choropleth 2019 
+
+FrTC2019 <- FranceBoites %>%
+  select(Year, REG_NOM, TCS) %>% 
+  filter(Year == "2019") %>% 
+  ggplot(aes(fill = TCS)) +
+  ggtitle("Année: 2019") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_sf() +
+  theme_void() +
+  scale_fill_distiller(palette = "RdBu", 
+                       #breaks = c(global_min, median_tcs, global_max),
+                       #labels = c(paste0(round(global_min, digits = 0)), paste0(round(median_tcs, digits = 0)), paste0(round(global_max, digits = 0))),
+                       name = paste("Taux de délivrance \nstandardisé"),
+                       limits = c(global_min, global_max) # Set the fixed limits here
+  )
+
+# choropleth 2020 
+
+FrTC2020 <- FranceBoites %>%
+  select(Year, REG_NOM, TCS) %>% 
+  filter(Year == "2020") %>% 
+  ggplot(aes(fill = TCS)) +
+  ggtitle("Année: 2020") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_sf() +
+  theme_void() +
+  scale_fill_distiller(palette = "RdBu", 
+                       #breaks = c(global_min, median_tcs, global_max),
+                       #labels = c(paste0(round(global_min, digits = 0)), paste0(round(median_tcs, digits = 0)), paste0(round(global_max, digits = 0))),
+                       name = paste("Taux de délivrance \nstandardisé"),
+                       limits = c(global_min, global_max) # Set the fixed limits here
+  )
+
+# choropleth 2021 
+
+FrTC2021 <- FranceBoites %>%
+  select(Year, REG_NOM, TCS) %>% 
+  filter(Year == "2021") %>% 
+  ggplot(aes(fill = TCS)) +
+  ggtitle("Année: 2021") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_sf() +
+  theme_void() +
+  scale_fill_distiller(palette = "RdBu", 
+                       #breaks = c(global_min, median_tcs, global_max),
+                       #labels = c(paste0(round(global_min, digits = 0)), paste0(round(median_tcs, digits = 0)), paste0(round(global_max, digits = 0))),
+                       name = paste("Taux de délivrance \nstandardisé"),
+                       limits = c(global_min, global_max) # Set the fixed limits here
+  )
+
+
+# choropleth 2022 
+
+FrTC2022 <- FranceBoites %>%
+  select(Year, REG_NOM, TCS) %>% 
+  filter(Year == "2022") %>% 
+  ggplot(aes(fill = TCS)) +
+  ggtitle("Année: 2022") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_sf() +
+  theme_void() +
+  scale_fill_distiller(palette = "RdBu", 
+                       #breaks = c(global_min, median_tcs, global_max),
+                       #labels = c(paste0(round(global_min, digits = 0)), paste0(round(median_tcs, digits = 0)), paste0(round(global_max, digits = 0))),
+                       name = paste("Taux de délivrance \nstandardisé"),
+                       limits = c(global_min, global_max) # Set the fixed limits here
+  )
+
+# choropleth 2023 
+
+FrTC2023 <- FranceBoites %>%
+  select(Year, REG_NOM, TCS) %>% 
+  filter(Year == "2023") %>% 
+  ggplot(aes(fill = TCS)) +
+  ggtitle("Année: 2023") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  geom_sf() +
+  theme_void() +
+  scale_fill_distiller(palette = "RdBu", 
+                       #breaks = c(global_min, median_tcs, global_max),
+                       #labels = c(paste0(round(global_min, digits = 0)), paste0(round(median_tcs, digits = 0)), paste0(round(global_max, digits = 0))),
+                       name = paste("Taux de délivrance \nstandardisé"),
+                       limits = c(global_min, global_max) # Set the fixed limits here
+  )
+
+
+FrTCTot <- ((FrTC2018 + FrTC2019 + FrTC2020)/ (FrTC2021 + FrTC2022 + FrTC2023)) 
+
+
+FrTCTot_p <- FrTCTot +
+  plot_layout(guides = "collect") + 
+  plot_annotation(
+    title = "Évolution d'usage d'anxiolytiques standardisée pour 1 000 habitants en France Métropolitaine (2018-2023)", 
+    subtitle = "Comparaison régionale des tendances de délivrance des médicaments",
+    caption = "Source de données: OpenMedic et INSEE") & theme(legend.position = 'right')
+
+print(FrTCTot_p, hight = 7, width = 11)
+```
+
+Dans le cadre de notre analyse, nous avons converti explicitement la géométrie des régions en format MULTIPOLYGON, un type de donnée standard largement pris en charge pour la manipulation et la visualisation des polygones géographiques. Cette transformation a permis d'assurer une meilleure compatibilité avec les outils de cartographie utilisés
+
+```{r interprep, include=FALSE}
+library(plotly)
+library(htmltools)
+library(htmlwidgets)
+
+FranceBoites_multipolygon <- st_cast(FranceBoites, "MULTIPOLYGON")
+```
+
+Interactive map boucle
+```{r intermap}
+
+output_dir <- "HtmlWidget"
+#dir.create(output_dir, showWarnings = FALSE) # Create folder if it doesn't exist
+
+years_to_plot <- unique(FranceBoites_multipolygon$Year) # Obtenez des années uniques dans les données
+
+for (year_val in years_to_plot) {
+  plot_title <- sprintf("Usage d'anxiolytiques standardisée pour 1 000 habitants \nen France Métropolitaine (%s)", year_val)
+  
+  pi <- FranceBoites_multipolygon %>%
+    filter(Year == year_val) %>%
+    ggplot(aes(fill = TCS,
+               text = paste0("Région: ", REG_NOM, "<br>", # Add 'text' aesthetic for tooltip
+                             "TDS: ", round(TCS, 0)))) + # Customize tooltip text
+    geom_sf() +
+    theme_void() +
+    theme(plot.title = element_text(hjust = 0.5)) + # Center title
+    scale_fill_distiller(
+      palette = "RdBu",
+      name = paste("Taux de délivrance standardisé"),
+      limits = c(global_min, global_max),
+      guide = guide_colorbar(
+       # Barre pour gradient de couleur
+        barwidth = 20,
+        # largeur de la barre
+        barheight = 0.5,
+        # hauteur de la barre
+        title.position = "top",
+        # position du titre de la barre
+        title.hjust = 0          # titre à gauche
+      )
+    ) +
+    ggtitle(plot_title)
+  
+ interactive_plot <- ggplotly(pi, tooltip = "text") %>%
+    layout(hovermode = "closest",
+           legend = list(
+             orientation = "h",
+             x = 0.3,
+             y = -0.2
+           ))  # Ajuste la position de la légende si besoin)
+  
+  # Forcer l'activation du hover sur les surfaces remplies
+  for (i in seq_along(interactive_plot$x$data)) {
+    interactive_plot$x$data[[i]]$hoveron <- "fills"
+  }
+  # Enregistrer la carte interactive au format HTML
+  file_name <- sprintf("%s/Map_interactive_%s.html", output_dir, year_val)
+  saveWidget(interactive_plot, file_name, selfcontained = TRUE)
+  
+  print(paste("Saved:", file_name)) # Print confirmation
+  print(interactive_plot)
+}
+
+```
+
+
+# Enregistrer la carte interactive au format HTML
+htmltools::save_html(interactive_plot, "HtmlWidget/map_interactive_x.html")
+
+```{r html, eval=FALSE, include=FALSE}
+
+# Enregistrer la carte interactive au format HTML
+htmltools::save_html(interactive_plot, "HtmlWidget/map_interactive_x.html")
+```
+
+
+
+Nous avons finalisé notre travail en créant une carte animée sous forme de GIF, permettant de visualiser simultanément l’évolution spatio-temporelle de la délivrance d’anxiolytiques en France métropolitaine entre 2018 et 2023. Cette approche dynamique offre une représentation plus intuitive des tendances régionales et des variations au fil du temps, en mettant en évidence les disparités d'usage des médicaments entre les différentes périodes.
+
+
+```{r anim, fig.dim = c(4,5)}
+library(gganimate)
+library(gifski)
+
+p_choropleth_gr <- FranceBoites %>% # Utiliser l'intégralité du jeu de données FranceBoites
+  ggplot(aes(fill = TCS)) + # 'fill = TCS' pour choroplèthe
+  geom_sf() +
+  theme_void() +
+  theme(legend.position = "right", plot.title = element_text(hjust = 0.5, vjust=0.5, face='bold'), plot.subtitle = element_text(hjust = 0.5)) + # Centrer le titre et le sous-titre
+  scale_fill_distiller(
+    palette = "RdBu",
+    #breaks = c(global_min, global_max),
+    #labels = c(paste0(round(global_min, digits = 0)), paste0(round(global_max, digits = 0))),
+    name = paste("Taux de délivrance \nstandardisé"),
+    limits = c(global_min, global_max) # Keep global limits
+  ) +
+  labs(
+    title = "Évolution de l'usage d'anxiolytiques standardisée \npour 1 000 habitants \nen France Métropolitaine (2018-2023)", # General main title
+    subtitle = "Année: {closest_state}" # Dynamic subtitle to show the year
+  )
+
+# 2. Add animation layers using gganimate - transition_states on 'Year'
+anim_choropleth_gr <- p_choropleth_gr +
+  transition_states(Year, # Animate by 'Year' column
+                    transition_length = 1,
+                    state_length = 2) +
+  enter_fade() +
+  exit_fade()
+
+animate(anim_choropleth_gr,
+        duration = 10, # Adjust duration as needed
+        fps = 20)      # Adjust fps as needed
+```
+
+
+Enregistrer l'animation au format GIF (ou autre format)
+```{r savegif, eval=FALSE, include=FALSE}
+
+animate(anim_choropleth_gr,
+        duration = 10, # Adjust duration as needed
+        fps = 20,      # Adjust fps as needed
+        renderer = gifski_renderer("choropleth_animation_grad.gif")) 
+```
+
+
+
